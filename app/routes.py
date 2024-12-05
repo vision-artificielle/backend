@@ -1,7 +1,16 @@
 import cv2
 from flask import Blueprint, request, send_file, jsonify
 from io import BytesIO
+import zipfile
 from PIL import Image
+from flask import Flask, request, send_file
+import numpy as np
+from skimage import io, color, img_as_ubyte
+from scipy.signal import convolve2d
+from scipy.ndimage import gaussian_filter
+import cv2
+import tempfile
+import os
 
 from app.services.gaussian_service import gaussian_filter_from_scratch, gaussian_filter_predefined
 from app.services.noise_service import add_noise
@@ -49,16 +58,50 @@ def route_gaussian_from_scratch():
 
 @app_routes.route('/gaussian_predefined', methods=['POST'])
 def route_gaussian_predefined():
+    # file = request.files['image']
+    # sigma = float(request.form.get('sigma', 1))
+    # noise_level = float(request.form.get('noise_level', 0.2))  # Noise level
+    #
+    # # Add noise
+    # noisy_image = add_noise(file, noise_level)
+    #
+    # # Apply Gaussian filter
+    # filtered_image = gaussian_filter_predefined(noisy_image, sigma=sigma)
+    # return send_file(filtered_image, mimetype='image/png')
+    # Vérifie si une image est envoyée
+    # Vérifie si une image est envoyée
+    if 'image' not in request.files:
+        return {"error": "No image file provided"}, 400
+
+    # Récupère l'image envoyée
     file = request.files['image']
-    sigma = float(request.form.get('sigma', 1))
-    noise_level = float(request.form.get('noise_level', 0.1))  # Noise level
+    image = io.imread(file)
 
-    # Add noise
-    noisy_image = add_noise(file, noise_level)
+    # Convertit en niveaux de gris si l'image est en couleur
+    if len(image.shape) == 3:
+        image = color.rgb2gray(image)
 
-    # Apply Gaussian filter
-    filtered_image = gaussian_filter_predefined(noisy_image, sigma=sigma)
-    return send_file(filtered_image, mimetype='image/png')
+    # Normalise l'image entre 0 et 1 (pour éviter les erreurs de calcul)
+    image = image / 255.0
+
+    # Ajouter du flou et du bruit
+    psf = np.ones((5, 5)) / 25  # Noyau de flou (PSF)
+    blurred = convolve2d(image, psf, mode='same', boundary='wrap')
+    noise = np.random.normal(0, 0.05, blurred.shape)  # Bruit gaussien (réduit)
+    blurred_noisy = blurred + noise
+
+    # Applique le filtre prédéfini (Filtre Gaussien)
+    filtered_image = gaussian_filter(blurred_noisy, sigma=1)
+
+    # Remet l'image dans un format 8-bit pour l'affichage
+    filtered_image = img_as_ubyte(filtered_image / np.max(filtered_image))
+
+    # Sauvegarde l'image filtrée dans un fichier temporaire
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    cv2.imwrite(temp_file.name, filtered_image)
+
+    # Retourne l'image traitée au client
+    return send_file(temp_file.name, mimetype='image/png', as_attachment=True, download_name="filtered_image.png")
 
 
 @app_routes.route("/opencv", methods=["POST"])
@@ -90,17 +133,47 @@ def denoise():
 
 
 
+
 @app_routes.route('/wiener_from_scratch', methods=['POST'])
 def route_wiener_from_scratch():
-    file = request.files['image']
-    noise_level = float(request.form.get('noise_level', 0.1))  # Noise level
+    """Apply Wiener filter and return both noisy and restored images."""
+    try:
+        file = request.files['image']
+        noise_level = float(request.form.get('noise_level', 0.2))  # Noise level
 
-    # Add noise
-    noisy_image = add_noise(file, noise_level)
+        # Add noise
+        noisy_image = add_noise(file, noise_level)
 
-    # Apply Wiener filter from scratch
-    restored_image = wiener_from_scratch(noisy_image)
-    return send_file(restored_image, mimetype='image/png')
+        # Apply Wiener filter
+        restored_image = wiener_from_scratch(noisy_image)
+
+        # Convert images to PIL format and save to BytesIO
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as zf:
+            # Save noisy image
+            noisy_image_io = BytesIO()
+            noisy_pil_image = Image.fromarray(noisy_image)
+            noisy_pil_image.save(noisy_image_io, format='PNG')
+            noisy_image_io.seek(0)
+            zf.writestr('noisy_image.png', noisy_image_io.read())
+
+            # Save restored image
+            restored_image_io = BytesIO()
+            restored_pil_image = Image.fromarray(restored_image)
+            restored_pil_image.save(restored_image_io, format='PNG')
+            restored_image_io.seek(0)
+            zf.writestr('restored_image.png', restored_image_io.read())
+
+        # Reset buffer position
+        zip_buffer.seek(0)
+
+        # Send ZIP file as response
+        return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name='images.zip')
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 @app_routes.route('/wiener_predefined', methods=['POST'])
