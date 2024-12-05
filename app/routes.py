@@ -1,16 +1,17 @@
-import cv2
-from flask import Blueprint, request, send_file, jsonify
+from flask import Flask, Blueprint, request, send_file, jsonify
 from io import BytesIO
 import zipfile
-from PIL import Image
-from flask import Flask, request, send_file
+import os
+import tempfile
+
 import numpy as np
-from skimage import io, color, img_as_ubyte
 from scipy.signal import convolve2d
 from scipy.ndimage import gaussian_filter
+from skimage import io, color, img_as_ubyte
+
+from PIL import Image
 import cv2
-import tempfile
-import os
+
 
 from app.services.gaussian_service import gaussian_filter_from_scratch, gaussian_filter_predefined
 from app.services.noise_service import add_noise
@@ -124,42 +125,40 @@ def denoise():
 
 @app_routes.route('/wiener_from_scratch', methods=['POST'])
 def route_wiener_from_scratch():
-    """Apply Wiener filter and return both noisy and restored images."""
+    """
+    Endpoint pour appliquer le filtre de Wiener à une image envoyée.
+    """
+    if 'image' not in request.files:
+        return "No image file provided", 400
+
+    file = request.files['image']
+    if not file:
+        return "No file uploaded", 400
+
     try:
-        file = request.files['image']
-        noise_level = float(request.form.get('noise_level', 0.2))  # Noise level
+        # Lire l'image depuis le fichier uploadé
+        image = Image.open(file.stream).convert('L')  # Convertir en niveaux de gris
+        img_np = np.array(image)
 
-        # Add noise
-        noisy_image = add_noise(file, noise_level)
+        # Définir un noyau de flou (PSF - Point Spread Function)
+        kernel_size = 5
+        kernel = np.ones((kernel_size, kernel_size)) / (kernel_size ** 2)
 
-        # Apply Wiener filter
-        restored_image = wiener_from_scratch(noisy_image)
+        # Appliquer le filtre de Wiener
+        restored_image = wiener_from_scratch(img_np, kernel)
 
-        # Convert images to PIL format and save to BytesIO
-        zip_buffer = BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w') as zf:
-            # Save noisy image
-            noisy_image_io = BytesIO()
-            noisy_pil_image = Image.fromarray(noisy_image)
-            noisy_pil_image.save(noisy_image_io, format='PNG')
-            noisy_image_io.seek(0)
-            zf.writestr('noisy_image.png', noisy_image_io.read())
+        # Sauvegarder l'image restaurée dans un buffer
+        output = BytesIO()
+        result_image = Image.fromarray(restored_image)
+        result_image.save(output, format="PNG")
+        output.seek(0)
 
-            # Save restored image
-            restored_image_io = BytesIO()
-            restored_pil_image = Image.fromarray(restored_image)
-            restored_pil_image.save(restored_image_io, format='PNG')
-            restored_image_io.seek(0)
-            zf.writestr('restored_image.png', restored_image_io.read())
-
-        # Reset buffer position
-        zip_buffer.seek(0)
-
-        # Send ZIP file as response
-        return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name='images.zip')
+        # Retourner l'image traitée
+        return send_file(output, mimetype='image/png', as_attachment=False, download_name='restored_image.png')
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
