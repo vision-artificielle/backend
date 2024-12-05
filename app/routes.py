@@ -58,18 +58,6 @@ def route_gaussian_from_scratch():
 
 @app_routes.route('/gaussian_predefined', methods=['POST'])
 def route_gaussian_predefined():
-    # file = request.files['image']
-    # sigma = float(request.form.get('sigma', 1))
-    # noise_level = float(request.form.get('noise_level', 0.2))  # Noise level
-    #
-    # # Add noise
-    # noisy_image = add_noise(file, noise_level)
-    #
-    # # Apply Gaussian filter
-    # filtered_image = gaussian_filter_predefined(noisy_image, sigma=sigma)
-    # return send_file(filtered_image, mimetype='image/png')
-    # Vérifie si une image est envoyée
-    # Vérifie si une image est envoyée
     if 'image' not in request.files:
         return {"error": "No image file provided"}, 400
 
