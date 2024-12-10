@@ -7,7 +7,7 @@ def create_app():
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limite de 16 MB
 
     # Configure CORS
-    CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
+    CORS(app)
 
     with app.app_context():
         from .routes import app_routes

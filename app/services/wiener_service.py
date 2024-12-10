@@ -6,6 +6,53 @@ from numpy.fft import fft2, ifft2
 from io import BytesIO
 from PIL import Image
 
+
+def apply_wiener_filter_predefined(image_stream, psf_kernel_size=5, noise_std=0.1):
+    """
+    Applique un filtre de Wiener prédéfini à une image envoyée.
+    """
+    # Lire l'image depuis le flux de données
+    image = Image.open(image_stream).convert('L')  # Convertir en niveaux de gris
+    img_np = np.array(image) / 255.0  # Normalisation entre 0 et 1
+
+    # Ajouter du flou et du bruit
+    psf = np.ones((psf_kernel_size, psf_kernel_size)) / (psf_kernel_size ** 2)  # Noyau de flou (PSF)
+    blurred = convolve2d(img_np, psf, mode='same', boundary='wrap')
+    noise = np.random.normal(0, noise_std, blurred.shape)  # Bruit gaussien
+    blurred_noisy = blurred + noise
+
+    # Restaurer l'image avec le filtre de Wiener non supervisé
+    restored, _ = unsupervised_wiener(blurred_noisy, psf)
+
+    # Convertir l'image restaurée en fichier PNG en mémoire
+    output = BytesIO()
+    result_image = Image.fromarray((restored * 255).astype(np.uint8))  # Conversion en entier
+    result_image.save(output, format="PNG")
+    output.seek(0)
+
+    return output
+def apply_wiener_filter(image_stream, kernel_size=5):
+    """
+    Applique le filtre de Wiener à une image chargée à partir du flux de données.
+    """
+    # Lire l'image depuis le flux de données
+    image = Image.open(image_stream).convert('L')  # Convertir en niveaux de gris
+    img_np = np.array(image)
+
+    # Définir un noyau de flou (PSF - Point Spread Function)
+    kernel = np.ones((kernel_size, kernel_size)) / (kernel_size ** 2)
+
+    # Appliquer le filtre de Wiener (fonction à définir)
+    restored_image = wiener_from_scratch(img_np, kernel)
+
+    # Convertir l'image restaurée en fichier PNG en mémoire
+    output = BytesIO()
+    result_image = Image.fromarray(restored_image)
+    result_image.save(output, format="PNG")
+    output.seek(0)
+
+    return output
+
 def wiener_from_scratch(img, kernel, K=10):
     """
     Applique un filtre de Wiener à une image donnée.

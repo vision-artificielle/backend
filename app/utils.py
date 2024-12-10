@@ -1,5 +1,10 @@
+from io import BytesIO
+
 import numpy as np
 from PIL import Image
+from scipy.signal import convolve2d
+from skimage.restoration import unsupervised_wiener
+
 
 def load_and_preprocess_image(image_stream):
     """Charge et prétraite l'image depuis un flux binaire."""
